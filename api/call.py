@@ -45,9 +45,9 @@ class handler(BaseHTTPRequestHandler):
             "name": room_name,
             "empty_timeout": 60,
             "max_participants": 2,
-            "agent": {
-                "agent_name": "claudia",
-            },
+            "agents": [
+                {"agent_name": "claudia"},
+            ],
         }).encode()
 
         # Ensure URL uses https for the API call
