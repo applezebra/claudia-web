@@ -2,6 +2,7 @@ import json
 import os
 import time
 import hmac
+from datetime import timedelta
 
 from http.server import BaseHTTPRequestHandler
 from livekit.api import LiveKitAPI, CreateRoomRequest, RoomAgentDispatch
@@ -60,7 +61,7 @@ class handler(BaseHTTPRequestHandler):
                 can_publish=True,
                 can_subscribe=True,
             ))
-            .with_ttl(3600)
+            .with_ttl(timedelta(hours=1))
             .to_jwt()
         )
 
