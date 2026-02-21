@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Claudia</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0a0a0a;
+      color: #fff;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    #status {
+      font-size: 1.1rem;
+      color: #aaa;
+      margin-bottom: 2rem;
+      text-align: center;
+      padding: 0 1rem;
+    }
+
+    #status.connected { color: #4ade80; }
+    #status.error { color: #f87171; }
+
+    .pulse-ring {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: rgba(99, 102, 241, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 3rem;
+      position: relative;
+    }
+
+    .pulse-ring.active::before {
+      content: "";
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: rgba(99, 102, 241, 0.1);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.5; }
+      50% { transform: scale(1.3); opacity: 0; }
+    }
+
+    .pulse-ring .dot {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: #6366f1;
+    }
+
+    .pulse-ring.active .dot { background: #818cf8; }
+
+    #hangup {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: #ef4444;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+
+    #hangup:active { background: #dc2626; }
+
+    #hangup svg {
+      width: 28px;
+      height: 28px;
+      fill: #fff;
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div id="status">Connecting...</div>
+
+  <div class="pulse-ring" id="pulseRing">
+    <div class="dot"></div>
+  </div>
+
+  <button id="hangup" class="hidden" aria-label="Hang up">
+    <svg viewBox="0 0 24 24"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a.956.956 0 0 1-.29-.7c0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.1-.7-.28-.79-.73-1.68-1.36-2.66-1.85a.996.996 0 0 1-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></svg>
+  </button>
+
+  <script type="module">
+    import {
+      Room,
+      RoomEvent,
+      Track,
+      ConnectionState,
+    } from "https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.esm.mjs";
+
+    // Read from sessionStorage (set by PIN page), fall back to URL params
+    const params = new URLSearchParams(location.search);
+    const token = sessionStorage.getItem("lk_token") || params.get("token");
+    const wsUrl = sessionStorage.getItem("lk_ws") || params.get("ws");
+
+    // Clean up sessionStorage after reading
+    sessionStorage.removeItem("lk_token");
+    sessionStorage.removeItem("lk_ws");
+
+    const statusEl = document.getElementById("status");
+    const hangupBtn = document.getElementById("hangup");
+    const pulseRing = document.getElementById("pulseRing");
+
+    if (!token || !wsUrl) {
+      window.location.href = "/";
+      throw new Error("No credentials");
+    }
+
+    const room = new Room({
+      audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      publishDefaults: { dtx: true, red: true },
+    });
+
+    room.on(RoomEvent.ConnectionStateChanged, (state) => {
+      if (state === ConnectionState.Connected) {
+        statusEl.textContent = "Connected to Claudia";
+        statusEl.classList.add("connected");
+        pulseRing.classList.add("active");
+        hangupBtn.classList.remove("hidden");
+      } else if (state === ConnectionState.Reconnecting) {
+        statusEl.textContent = "Reconnecting...";
+        statusEl.classList.remove("connected");
+      }
+    });
+
+    room.on(RoomEvent.Disconnected, () => {
+      statusEl.textContent = "Call ended";
+      statusEl.classList.remove("connected");
+      statusEl.classList.add("error");
+      pulseRing.classList.remove("active");
+      hangupBtn.classList.add("hidden");
+    });
+
+    room.on(RoomEvent.TrackSubscribed, (track) => {
+      if (track.kind === Track.Kind.Audio) {
+        const el = track.attach();
+        el.style.display = "none";
+        document.body.appendChild(el);
+      }
+    });
+
+    room.on(RoomEvent.TrackUnsubscribed, (track) => {
+      track.detach().forEach((el) => el.remove());
+    });
+
+    hangupBtn.addEventListener("click", async () => {
+      await room.disconnect();
+    });
+
+    try {
+      await room.connect(wsUrl, token);
+      await room.localParticipant.setMicrophoneEnabled(true);
+    } catch (err) {
+      statusEl.textContent = "Failed to connect: " + err.message;
+      statusEl.classList.add("error");
+    }
+  </script>
+</body>
+</html>

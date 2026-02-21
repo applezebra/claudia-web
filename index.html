@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Claudia</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0a0a0a;
+      color: #fff;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      font-size: 0.95rem;
+      color: #888;
+      margin-bottom: 2.5rem;
+    }
+
+    .pin-form {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    .pin-input {
+      width: 200px;
+      font-size: 2rem;
+      letter-spacing: 0.8rem;
+      text-align: center;
+      padding: 0.75rem 1rem;
+      background: #1a1a1a;
+      border: 2px solid #333;
+      border-radius: 12px;
+      color: #fff;
+      outline: none;
+      transition: border-color 0.2s;
+      -webkit-text-security: disc;
+    }
+
+    .pin-input:focus {
+      border-color: #6366f1;
+    }
+
+    .pin-input.error {
+      border-color: #ef4444;
+      animation: shake 0.4s ease;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-8px); }
+      75% { transform: translateX(8px); }
+    }
+
+    .call-btn {
+      width: 200px;
+      padding: 0.85rem;
+      font-size: 1.1rem;
+      font-weight: 600;
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+    }
+
+    .call-btn:active { background: #4f46e5; }
+    .call-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .error-msg {
+      font-size: 0.9rem;
+      color: #f87171;
+      min-height: 1.4rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Claudia</h1>
+  <p class="subtitle">Enter PIN to connect</p>
+
+  <form class="pin-form" id="pinForm">
+    <input
+      class="pin-input"
+      id="pinInput"
+      type="tel"
+      inputmode="numeric"
+      pattern="[0-9]*"
+      maxlength="4"
+      autocomplete="off"
+      autofocus
+      placeholder="----"
+    >
+    <button class="call-btn" type="submit" id="callBtn">Call</button>
+    <p class="error-msg" id="errorMsg"></p>
+  </form>
+
+  <script>
+    const form = document.getElementById("pinForm");
+    const input = document.getElementById("pinInput");
+    const btn = document.getElementById("callBtn");
+    const errorMsg = document.getElementById("errorMsg");
+
+    input.addEventListener("input", () => {
+      input.classList.remove("error");
+      errorMsg.textContent = "";
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const pin = input.value.trim();
+
+      if (pin.length !== 4) {
+        input.classList.add("error");
+        errorMsg.textContent = "Enter a 4-digit PIN";
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = "Connecting...";
+      errorMsg.textContent = "";
+
+      try {
+        const resp = await fetch("/api/call", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pin }),
+        });
+
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          throw new Error(data.error || "Connection failed");
+        }
+
+        sessionStorage.setItem("lk_token", data.token);
+        sessionStorage.setItem("lk_ws", data.ws_url);
+        window.location.href = "/call";
+      } catch (err) {
+        input.classList.add("error");
+        errorMsg.textContent = err.message;
+        btn.disabled = false;
+        btn.textContent = "Call";
+        input.value = "";
+        input.focus();
+      }
+    });
+  </script>
+</body>
+</html>
