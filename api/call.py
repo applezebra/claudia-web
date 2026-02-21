@@ -2,11 +2,11 @@ import json
 import os
 import time
 import hmac
+import urllib.request
 from datetime import timedelta
 
 from http.server import BaseHTTPRequestHandler
-from livekit.api import LiveKitAPI, CreateRoomRequest, RoomAgentDispatch
-from livekit.api.access_token import AccessToken, VideoGrants
+from livekit.api import AccessToken, VideoGrants
 
 
 class handler(BaseHTTPRequestHandler):
@@ -29,26 +29,45 @@ class handler(BaseHTTPRequestHandler):
 
         room_name = f"claudia-{int(time.time())}"
 
-        # Create room with agent dispatch
-        import asyncio
+        # Create room with agent dispatch via LiveKit Twirp API (sync HTTP)
+        admin_token = (
+            AccessToken(api_key, api_secret)
+            .with_identity("serverless")
+            .with_grants(VideoGrants(
+                room_create=True,
+                room_admin=True,
+            ))
+            .with_ttl(timedelta(minutes=1))
+            .to_jwt()
+        )
 
-        async def setup():
-            lk = LiveKitAPI(livekit_url, api_key, api_secret)
-            try:
-                await lk.room.create_room(
-                    CreateRoomRequest(
-                        name=room_name,
-                        empty_timeout=60,
-                        max_participants=2,
-                        agent=RoomAgentDispatch(
-                            agent_name="claudia",
-                        ),
-                    )
-                )
-            finally:
-                await lk.aclose()
+        create_body = json.dumps({
+            "name": room_name,
+            "empty_timeout": 60,
+            "max_participants": 2,
+            "agent": {
+                "agent_name": "claudia",
+            },
+        }).encode()
 
-        asyncio.run(setup())
+        # Ensure URL uses https for the API call
+        api_url = livekit_url
+        if api_url.startswith("wss://"):
+            api_url = api_url.replace("wss://", "https://")
+
+        req = urllib.request.Request(
+            f"{api_url}/twirp/livekit.RoomService/CreateRoom",
+            data=create_body,
+            headers={
+                "Authorization": f"Bearer {admin_token}",
+                "Content-Type": "application/json",
+            },
+        )
+
+        try:
+            urllib.request.urlopen(req)
+        except Exception as e:
+            return self._json(500, {"error": f"Failed to create room: {e}"})
 
         # Generate participant token
         token = (
@@ -65,7 +84,9 @@ class handler(BaseHTTPRequestHandler):
             .to_jwt()
         )
 
-        ws_url = livekit_url.replace("https://", "wss://").replace("http://", "ws://")
+        ws_url = livekit_url
+        if ws_url.startswith("https://"):
+            ws_url = ws_url.replace("https://", "wss://")
 
         return self._json(200, {"token": token, "ws_url": ws_url})
 
